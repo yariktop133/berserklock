@@ -47,18 +47,38 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 @interface SBFLockScreenDateView : UIView
 @end
 
+struct SBIconImageInfo {
+    CGSize size;
+    CGFloat scale;
+    CGFloat continuousCornerRadius;
+};
+
 @interface SBIcon : NSObject
 - (id)applicationBundleID;
 - (id)leafIdentifier;
 - (id)nodeIdentifier;
+- (id)application;
+- (UIImage *)generateIconImageWithInfo:(struct SBIconImageInfo)info;
+- (UIImage *)iconImageWithInfo:(struct SBIconImageInfo)info;
 - (UIImage *)generateIconImage:(int)type;
 - (UIImage *)getIconImage:(int)type;
 @end
 
 @interface SBIconImageView : UIView
+- (SBIcon *)icon;
+- (void)setIcon:(SBIcon *)icon location:(id)location animated:(BOOL)animated;
+- (void)setIconImage:(UIImage *)image;
+- (void)setContentsImage:(UIImage *)image;
+- (void)updateImageAnimated:(BOOL)animated;
+@end
+
+@interface SBMutableIconLabelImageParameters : NSObject
+- (void)setTextColor:(UIColor *)color;
+- (void)setFont:(UIFont *)font;
 @end
 
 @interface SBIconView : UIView
+- (SBIcon *)icon;
 @end
 
 @interface SBHWidgetContainerView : UIView
@@ -100,7 +120,37 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 @interface SBUILabel : UILabel
 @end
 
-#pragma mark - Helper для нативной подмены иконок Berserk
+@interface _SBUIPasscodeField : UIView
+@end
+
+#pragma mark - Helper для извлечения Bundle ID и подмены иконок
+
+static NSString *berserk_extractBundleID(SBIcon *icon) {
+    if (!icon) return nil;
+
+    NSString *bundleID = nil;
+
+    if ([icon respondsToSelector:@selector(applicationBundleID)]) {
+        bundleID = [icon applicationBundleID];
+    }
+
+    if ((!bundleID || bundleID.length == 0) && [icon respondsToSelector:@selector(application)]) {
+        id app = [icon application];
+        if (app && [app respondsToSelector:@selector(bundleIdentifier)]) {
+            bundleID = [app performSelector:@selector(bundleIdentifier)];
+        }
+    }
+
+    if ((!bundleID || bundleID.length == 0) && [icon respondsToSelector:@selector(leafIdentifier)]) {
+        bundleID = [icon leafIdentifier];
+    }
+
+    if ((!bundleID || bundleID.length == 0) && [icon respondsToSelector:@selector(nodeIdentifier)]) {
+        bundleID = [icon nodeIdentifier];
+    }
+
+    return bundleID;
+}
 
 static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     if (!bundleID || bundleID.length == 0) return nil;
@@ -148,20 +198,30 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     return nil;
 }
 
-#pragma mark - Hook SBIcon (Нативная подмена иконок в SpringBoard)
+#pragma mark - Hook SBIcon & SBIconImageView (Двойная гарантия подмены иконок + 60 FPS)
 
 %hook SBIcon
 
-- (UIImage *)generateIconImage:(int)type {
-    NSString *bundleID = nil;
-    if ([self respondsToSelector:@selector(applicationBundleID)]) {
-        bundleID = [self applicationBundleID];
-    } else if ([self respondsToSelector:@selector(leafIdentifier)]) {
-        bundleID = [self leafIdentifier];
-    } else if ([self respondsToSelector:@selector(nodeIdentifier)]) {
-        bundleID = [self nodeIdentifier];
+- (UIImage *)generateIconImageWithInfo:(struct SBIconImageInfo)info {
+    NSString *bundleID = berserk_extractBundleID(self);
+    UIImage *customImage = berserk_iconForBundleID(bundleID);
+    if (customImage) {
+        return customImage;
     }
+    return %orig;
+}
 
+- (UIImage *)iconImageWithInfo:(struct SBIconImageInfo)info {
+    NSString *bundleID = berserk_extractBundleID(self);
+    UIImage *customImage = berserk_iconForBundleID(bundleID);
+    if (customImage) {
+        return customImage;
+    }
+    return %orig;
+}
+
+- (UIImage *)generateIconImage:(int)type {
+    NSString *bundleID = berserk_extractBundleID(self);
     UIImage *customImage = berserk_iconForBundleID(bundleID);
     if (customImage) {
         return customImage;
@@ -170,15 +230,7 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 }
 
 - (UIImage *)getIconImage:(int)type {
-    NSString *bundleID = nil;
-    if ([self respondsToSelector:@selector(applicationBundleID)]) {
-        bundleID = [self applicationBundleID];
-    } else if ([self respondsToSelector:@selector(leafIdentifier)]) {
-        bundleID = [self leafIdentifier];
-    } else if ([self respondsToSelector:@selector(nodeIdentifier)]) {
-        bundleID = [self nodeIdentifier];
-    }
-
+    NSString *bundleID = berserk_extractBundleID(self);
     UIImage *customImage = berserk_iconForBundleID(bundleID);
     if (customImage) {
         return customImage;
@@ -188,15 +240,95 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
 %end
 
-#pragma mark - Hook SBIconImageView (Легковесный рендеринг без лагов)
-
 %hook SBIconImageView
+
+- (void)setIcon:(SBIcon *)icon location:(id)location animated:(BOOL)animated {
+    %orig;
+    NSString *bundleID = berserk_extractBundleID(icon);
+    UIImage *customImage = berserk_iconForBundleID(bundleID);
+    if (customImage) {
+        self.layer.contents = (id)customImage.CGImage;
+    }
+}
+
+- (void)setIconImage:(UIImage *)image {
+    SBIcon *icon = nil;
+    if ([self respondsToSelector:@selector(icon)]) {
+        icon = [self icon];
+    }
+    NSString *bundleID = berserk_extractBundleID(icon);
+    UIImage *customImage = berserk_iconForBundleID(bundleID);
+    if (customImage) {
+        %orig(customImage);
+        self.layer.contents = (id)customImage.CGImage;
+        return;
+    }
+    %orig(image);
+}
+
+- (void)setContentsImage:(UIImage *)image {
+    SBIcon *icon = nil;
+    if ([self respondsToSelector:@selector(icon)]) {
+        icon = [self icon];
+    }
+    NSString *bundleID = berserk_extractBundleID(icon);
+    UIImage *customImage = berserk_iconForBundleID(bundleID);
+    if (customImage) {
+        %orig(customImage);
+        self.layer.contents = (id)customImage.CGImage;
+        return;
+    }
+    %orig(image);
+}
+
+- (void)updateImageAnimated:(BOOL)animated {
+    %orig;
+    SBIcon *icon = nil;
+    if ([self respondsToSelector:@selector(icon)]) {
+        icon = [self icon];
+    }
+    NSString *bundleID = berserk_extractBundleID(icon);
+    UIImage *customImage = berserk_iconForBundleID(bundleID);
+    if (customImage) {
+        self.layer.contents = (id)customImage.CGImage;
+    }
+}
 
 - (void)layoutSubviews {
     %orig;
-    // Чистый закругленный контур без динамических теней для 60 FPS
+    SBIcon *icon = nil;
+    if ([self respondsToSelector:@selector(icon)]) {
+        icon = [self icon];
+    }
+    NSString *bundleID = berserk_extractBundleID(icon);
+    UIImage *customImage = berserk_iconForBundleID(bundleID);
+    if (customImage) {
+        self.layer.contents = (id)customImage.CGImage;
+    }
+    // Чистое скругление без динамических теней для 60 FPS на A9
     self.layer.masksToBounds = YES;
     self.layer.cornerRadius = 14.0f;
+}
+
+%end
+
+#pragma mark - Hook SBMutableIconLabelImageParameters (Кроваво-рунические подписи иконок)
+
+%hook SBMutableIconLabelImageParameters
+
+- (void)setTextColor:(UIColor *)color {
+    %orig([UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:0.95]);
+}
+
+- (void)setFont:(UIFont *)font {
+    if (font) {
+        UIFont *bf = [UIFont fontWithName:@"Copperplate-Bold" size:font.pointSize];
+        if (bf) {
+            %orig(bf);
+            return;
+        }
+    }
+    %orig(font);
 }
 
 %end
@@ -207,7 +339,6 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
 - (void)layoutSubviews {
     %orig;
-    // Затемненное обсидиановое стекло с кровавым кантом для всех виджетов
     self.layer.cornerRadius = 20.0f;
     self.layer.masksToBounds = YES;
     self.layer.borderWidth = 1.6f;
@@ -226,13 +357,11 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
     UIView *parentView = self.view;
 
-    // 1. Оверлей молний на экране блокировки
     BerserkLightningOverlayView *overlay = [[BerserkLightningOverlayView alloc] initWithFrame:parentView.bounds];
     overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [parentView addSubview:overlay];
     objc_setAssociatedObject(self, kBerserkLightningKey, overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    // 2. Жест свайпа по экрану блокировки
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(berserk_handlePan:)];
     pan.cancelsTouchesInView = NO;
     pan.delaysTouchesBegan = NO;
@@ -241,7 +370,6 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     [parentView addGestureRecognizer:pan];
     objc_setAssociatedObject(self, kBerserkPanGestureKey, pan, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    // 3. Часы в стиле Берсерка (каноничное Клеймо + рунические цифры)
     CGFloat screenW = parentView.bounds.size.width > 0 ? parentView.bounds.size.width : 320.0f;
     CGRect clockFrame = CGRectMake(0, 36.0f, screenW, 230.0f);
     BerserkClockView *clockView = [[BerserkClockView alloc] initWithFrame:clockFrame];
@@ -326,13 +454,11 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
     UIView *homeView = self.view;
 
-    // Оверлей молний на рабочем столе
     BerserkLightningOverlayView *homeOverlay = [[BerserkLightningOverlayView alloc] initWithFrame:homeView.bounds];
     homeOverlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [homeView addSubview:homeOverlay];
     objc_setAssociatedObject(self, kBerserkHomeLightningKey, homeOverlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    // Свайпы по рабочему столу
     UIPanGestureRecognizer *homePan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(berserk_handleHomePan:)];
     homePan.cancelsTouchesInView = NO;
     homePan.delaysTouchesBegan = NO;
@@ -393,13 +519,12 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
 %end
 
-#pragma mark - Hook Экран ввода пароля (Passcode Screen: кольца, цифры, статус)
+#pragma mark - Hook Экран ввода пароля (Passcode: кольца, цифры, точки, статус)
 
 %hook TPRevealingRingView
 
 - (void)layoutSubviews {
     %orig;
-    // Кольца кнопок пароля из кованой стали с неоновым багровым свечением
     self.layer.borderWidth = 1.4f;
     self.layer.borderColor = [UIColor colorWithRed:0.90 green:0.08 blue:0.12 alpha:0.80].CGColor;
     self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.9].CGColor;
@@ -415,7 +540,6 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 - (void)layoutSubviews {
     %orig;
 
-    // Цифры на клавиатуре пароля: насыщенный кровавый цвет и свечение
     UILabel *numberLabel = nil;
     @try {
         numberLabel = [self valueForKey:@"_numberLabel"];
@@ -423,13 +547,16 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
     if (numberLabel && [numberLabel isKindOfClass:[UILabel class]]) {
         numberLabel.textColor = [UIColor colorWithRed:0.98 green:0.18 blue:0.18 alpha:1.0];
+        UIFont *bf = [UIFont fontWithName:@"Copperplate-Bold" size:numberLabel.font.pointSize];
+        if (bf) {
+            numberLabel.font = bf;
+        }
         numberLabel.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.9].CGColor;
         numberLabel.layer.shadowRadius = 6.0f;
         numberLabel.layer.shadowOpacity = 0.85f;
         numberLabel.layer.shadowOffset = CGSizeZero;
     }
 
-    // Буквы под цифрами (ABC, DEF...)
     UILabel *letterLabel = nil;
     @try {
         letterLabel = [self valueForKey:@"_letterLabel"];
@@ -437,6 +564,10 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
     if (letterLabel && [letterLabel isKindOfClass:[UILabel class]]) {
         letterLabel.textColor = [UIColor colorWithRed:0.75 green:0.35 blue:0.35 alpha:0.75];
+        UIFont *lf = [UIFont fontWithName:@"Copperplate" size:letterLabel.font.pointSize];
+        if (lf) {
+            letterLabel.font = lf;
+        }
     }
 }
 
@@ -447,7 +578,6 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 - (void)layoutSubviews {
     %orig;
 
-    // Заголовки ввода пароля ("Введите код-пароль", "Неверный пароль")
     UILabel *statusTitle = nil;
     @try {
         statusTitle = [self valueForKey:@"_statusTitleView"];
@@ -455,11 +585,25 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
     if (statusTitle && [statusTitle isKindOfClass:[UILabel class]]) {
         statusTitle.textColor = [UIColor colorWithRed:0.95 green:0.20 blue:0.20 alpha:1.0];
+        UIFont *bf = [UIFont fontWithName:@"Copperplate-Bold" size:statusTitle.font.pointSize];
+        if (bf) {
+            statusTitle.font = bf;
+        }
         statusTitle.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.9].CGColor;
         statusTitle.layer.shadowRadius = 8.0f;
         statusTitle.layer.shadowOpacity = 0.85f;
         statusTitle.layer.shadowOffset = CGSizeZero;
     }
+}
+
+%end
+
+%hook _SBUIPasscodeField
+
+- (void)layoutSubviews {
+    %orig;
+    // Окрашивание индикаторов пароля (точек ввода) в кроваво-красный цвет
+    self.tintColor = [UIColor colorWithRed:0.98 green:0.12 blue:0.16 alpha:1.0];
 }
 
 %end
@@ -470,6 +614,10 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     %orig;
     if (self.text.length > 0) {
         self.textColor = [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0];
+        UIFont *bf = [UIFont fontWithName:@"Copperplate-Bold" size:self.font.pointSize];
+        if (bf) {
+            self.font = bf;
+        }
     }
 }
 
@@ -533,12 +681,27 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
 %end
 
-#pragma mark - Hook Системная клавиатура (Глобально во всей системе)
+#pragma mark - Hook Системная клавиатура (Глобально)
 
 %hook UITextInputTraits
 
 - (UIKeyboardAppearance)keyboardAppearance {
-    // Принудительно возвращаем темную клавиатуру во всех приложениях
+    return UIKeyboardAppearanceDark;
+}
+
+%end
+
+%hook UITextField
+
+- (UIKeyboardAppearance)keyboardAppearance {
+    return UIKeyboardAppearanceDark;
+}
+
+%end
+
+%hook UITextView
+
+- (UIKeyboardAppearance)keyboardAppearance {
     return UIKeyboardAppearanceDark;
 }
 

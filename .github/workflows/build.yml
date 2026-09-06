@@ -19,6 +19,12 @@ jobs:
 
       - name: Build Rootless .deb Package
         run: |
+          if [ -d layout/DEBIAN ]; then
+            chmod -R 0755 layout/DEBIAN
+            for f in layout/DEBIAN/*; do
+              [ -f "$f" ] && tr -d '\r' < "$f" > "$f.tmp" && mv "$f.tmp" "$f" && chmod 0755 "$f"
+            done
+          fi
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
 
       - name: Upload .deb Package for Sileo
