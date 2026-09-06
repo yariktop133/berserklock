@@ -47,17 +47,21 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 @interface SBFLockScreenDateView : UIView
 @end
 
+@interface SBIcon : NSObject
+- (id)applicationBundleID;
+- (id)leafIdentifier;
+- (id)nodeIdentifier;
+- (UIImage *)generateIconImage:(int)type;
+- (UIImage *)getIconImage:(int)type;
+@end
+
 @interface SBIconImageView : UIView
 @end
 
 @interface SBIconView : UIView
-- (BOOL)isWidgetIcon;
 @end
 
-@interface SBIconLabelView : UIView
-@end
-
-@interface WGWidgetPlatterView : UIView
+@interface SBHWidgetContainerView : UIView
 @end
 
 @interface CCUIRoundButton : UIControl
@@ -68,6 +72,10 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 @end
 
 @interface CCUIContentModuleContainerView : UIView
+@end
+
+@interface UITextInputTraits : NSObject
+- (UIKeyboardAppearance)keyboardAppearance;
 @end
 
 @interface UIKBRenderConfig : NSObject
@@ -91,6 +99,123 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 
 @interface SBUILabel : UILabel
 @end
+
+#pragma mark - Helper для нативной подмены иконок Berserk
+
+static UIImage *berserk_iconForBundleID(NSString *bundleID) {
+    if (!bundleID || bundleID.length == 0) return nil;
+
+    static NSMutableDictionary *iconCache = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        iconCache = [[NSMutableDictionary alloc] init];
+    });
+
+    @synchronized(iconCache) {
+        UIImage *cached = iconCache[bundleID];
+        if (cached) return cached;
+    }
+
+    NSArray *searchPaths = @[
+        @"/var/jb/Library/Application Support/BerserkLock/Icons",
+        @"/Library/Application Support/BerserkLock/Icons",
+        @"/var/jb/Library/Themes/BerserkTheme.theme/IconBundles",
+        @"/Library/Themes/BerserkTheme.theme/IconBundles"
+    ];
+
+    NSFileManager *fm = [NSFileManager defaultManager];
+
+    for (NSString *baseDir in searchPaths) {
+        NSString *path1 = [NSString stringWithFormat:@"%@/%@.png", baseDir, bundleID];
+        if ([fm fileExistsAtPath:path1]) {
+            UIImage *img = [UIImage imageWithContentsOfFile:path1];
+            if (img) {
+                @synchronized(iconCache) { iconCache[bundleID] = img; }
+                return img;
+            }
+        }
+
+        NSString *path2 = [NSString stringWithFormat:@"%@/%@-large.png", baseDir, bundleID];
+        if ([fm fileExistsAtPath:path2]) {
+            UIImage *img = [UIImage imageWithContentsOfFile:path2];
+            if (img) {
+                @synchronized(iconCache) { iconCache[bundleID] = img; }
+                return img;
+            }
+        }
+    }
+
+    return nil;
+}
+
+#pragma mark - Hook SBIcon (Нативная подмена иконок в SpringBoard)
+
+%hook SBIcon
+
+- (UIImage *)generateIconImage:(int)type {
+    NSString *bundleID = nil;
+    if ([self respondsToSelector:@selector(applicationBundleID)]) {
+        bundleID = [self applicationBundleID];
+    } else if ([self respondsToSelector:@selector(leafIdentifier)]) {
+        bundleID = [self leafIdentifier];
+    } else if ([self respondsToSelector:@selector(nodeIdentifier)]) {
+        bundleID = [self nodeIdentifier];
+    }
+
+    UIImage *customImage = berserk_iconForBundleID(bundleID);
+    if (customImage) {
+        return customImage;
+    }
+    return %orig;
+}
+
+- (UIImage *)getIconImage:(int)type {
+    NSString *bundleID = nil;
+    if ([self respondsToSelector:@selector(applicationBundleID)]) {
+        bundleID = [self applicationBundleID];
+    } else if ([self respondsToSelector:@selector(leafIdentifier)]) {
+        bundleID = [self leafIdentifier];
+    } else if ([self respondsToSelector:@selector(nodeIdentifier)]) {
+        bundleID = [self nodeIdentifier];
+    }
+
+    UIImage *customImage = berserk_iconForBundleID(bundleID);
+    if (customImage) {
+        return customImage;
+    }
+    return %orig;
+}
+
+%end
+
+#pragma mark - Hook SBIconImageView (Легковесный рендеринг без лагов)
+
+%hook SBIconImageView
+
+- (void)layoutSubviews {
+    %orig;
+    // Чистый закругленный контур без динамических теней для 60 FPS
+    self.layer.masksToBounds = YES;
+    self.layer.cornerRadius = 14.0f;
+}
+
+%end
+
+#pragma mark - Hook SBHWidgetContainerView (Стилизация виджетов на iOS 15)
+
+%hook SBHWidgetContainerView
+
+- (void)layoutSubviews {
+    %orig;
+    // Затемненное обсидиановое стекло с кровавым кантом для всех виджетов
+    self.layer.cornerRadius = 20.0f;
+    self.layer.masksToBounds = YES;
+    self.layer.borderWidth = 1.6f;
+    self.layer.borderColor = [UIColor colorWithRed:0.90 green:0.10 blue:0.15 alpha:0.85].CGColor;
+    self.backgroundColor = [UIColor colorWithRed:0.08 green:0.06 blue:0.08 alpha:0.90];
+}
+
+%end
 
 #pragma mark - Hook CSCoverSheetViewController (Экран блокировки)
 
@@ -201,13 +326,13 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 
     UIView *homeView = self.view;
 
-    // 1. Оверлей молний на рабочем столе
+    // Оверлей молний на рабочем столе
     BerserkLightningOverlayView *homeOverlay = [[BerserkLightningOverlayView alloc] initWithFrame:homeView.bounds];
     homeOverlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [homeView addSubview:homeOverlay];
     objc_setAssociatedObject(self, kBerserkHomeLightningKey, homeOverlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    // 2. Свайпы по рабочему столу
+    // Свайпы по рабочему столу
     UIPanGestureRecognizer *homePan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(berserk_handleHomePan:)];
     homePan.cancelsTouchesInView = NO;
     homePan.delaysTouchesBegan = NO;
@@ -268,7 +393,7 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 
 %end
 
-#pragma mark - Hook Экран ввода пароля (Passcode Screen: кнопки, кольца, цифры)
+#pragma mark - Hook Экран ввода пароля (Passcode Screen: кольца, цифры, статус)
 
 %hook TPRevealingRingView
 
@@ -345,93 +470,7 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
     %orig;
     if (self.text.length > 0) {
         self.textColor = [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0];
-        self.layer.shadowColor = [UIColor colorWithRed:0.8 green:0.0 blue:0.0 alpha:0.7].CGColor;
-        self.layer.shadowRadius = 4.0f;
-        self.layer.shadowOpacity = 0.6f;
-        self.layer.shadowOffset = CGSizeZero;
     }
-}
-
-%end
-
-#pragma mark - Hook Системная типографика (Названия иконок на рабочем столе)
-
-%hook SBIconView
-
-- (void)layoutSubviews {
-    %orig;
-
-    // Стилизация виджетов
-    if ([self respondsToSelector:@selector(isWidgetIcon)] && [self isWidgetIcon]) {
-        self.layer.cornerRadius = 18.0f;
-        self.layer.borderWidth = 1.6f;
-        self.layer.borderColor = [UIColor colorWithRed:0.90 green:0.10 blue:0.15 alpha:0.85].CGColor;
-        self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.85].CGColor;
-        self.layer.shadowRadius = 10.0f;
-        self.layer.shadowOpacity = 0.55f;
-        self.layer.shadowOffset = CGSizeZero;
-    }
-
-    // Стилизация подписей иконок
-    UIView *labelView = nil;
-    @try {
-        labelView = [self valueForKey:@"_labelView"];
-    } @catch (NSException *e) {}
-
-    if (labelView) {
-        labelView.layer.shadowColor = [UIColor colorWithRed:0.85 green:0.0 blue:0.0 alpha:0.8].CGColor;
-        labelView.layer.shadowRadius = 3.5f;
-        labelView.layer.shadowOpacity = 0.75f;
-        labelView.layer.shadowOffset = CGSizeZero;
-    }
-}
-
-%end
-
-%hook SBIconLabelView
-
-- (void)layoutSubviews {
-    %orig;
-    self.layer.shadowColor = [UIColor colorWithRed:0.9 green:0.0 blue:0.0 alpha:0.8].CGColor;
-    self.layer.shadowRadius = 3.0f;
-    self.layer.shadowOpacity = 0.7f;
-    self.layer.shadowOffset = CGSizeZero;
-}
-
-%end
-
-#pragma mark - Hook SBIconImageView (Стилизация ВСЕХ иконок)
-
-%hook SBIconImageView
-
-- (void)layoutSubviews {
-    %orig;
-    self.layer.masksToBounds = YES;
-    self.layer.cornerRadius = 14.0f;
-    self.layer.borderWidth = 1.4f;
-    self.layer.borderColor = [UIColor colorWithRed:0.85 green:0.08 blue:0.12 alpha:0.75].CGColor;
-    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.8].CGColor;
-    self.layer.shadowRadius = 5.0f;
-    self.layer.shadowOpacity = 0.6f;
-    self.layer.shadowOffset = CGSizeZero;
-}
-
-%end
-
-#pragma mark - Hook WGWidgetPlatterView (Виджеты)
-
-%hook WGWidgetPlatterView
-
-- (void)layoutSubviews {
-    %orig;
-    self.layer.cornerRadius = 18.0f;
-    self.layer.borderWidth = 1.6f;
-    self.layer.borderColor = [UIColor colorWithRed:0.90 green:0.10 blue:0.15 alpha:0.85].CGColor;
-    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.85].CGColor;
-    self.layer.shadowRadius = 10.0f;
-    self.layer.shadowOpacity = 0.55f;
-    self.layer.shadowOffset = CGSizeZero;
-    self.backgroundColor = [UIColor colorWithRed:0.08 green:0.06 blue:0.08 alpha:0.90];
 }
 
 %end
@@ -494,7 +533,16 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 
 %end
 
-#pragma mark - Hook Системная клавиатура
+#pragma mark - Hook Системная клавиатура (Глобально во всей системе)
+
+%hook UITextInputTraits
+
+- (UIKeyboardAppearance)keyboardAppearance {
+    // Принудительно возвращаем темную клавиатуру во всех приложениях
+    return UIKeyboardAppearanceDark;
+}
+
+%end
 
 %hook UIKBRenderConfig
 

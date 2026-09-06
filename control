@@ -1,10 +1,9 @@
 Package: com.user.berserklock
 Name: BerserkLock
-Version: 4.0.0
+Version: 5.0.0
 Architecture: iphoneos-arm64
-Description: Ultimate Berserk System Overhaul (v4.0.0): Berserk passcode keypad, crimson typography for all labels, Control Center, dark keyboard, energy-efficient lightning, and 45+ Berserk app icons (Happ VPN, TikTok, Geometry Dash, Telegram, built-in apps).
+Description: High-performance native Berserk overhaul for iOS 15 Dopamine (Rootless): 60 FPS zero-lag, native SpringBoard icon replacement without SnowBoard, Control Center modules, global dark keyboard, and Berserk passcode keypad.
 Maintainer: Antigravity
 Author: Antigravity
 Section: Tweaks
 Depends: mobilesubstrate (>= 0.9.5000)
-Suggests: com.spark.snowboard
