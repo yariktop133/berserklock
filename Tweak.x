@@ -435,7 +435,7 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
         [self.layer addSublayer:bevel];
     }
     bevel.frame = self.bounds;
-    [self.layer bringSublayerToFront:bevel];
+    [self.layer addSublayer:bevel];
 
     // Кованый кровавый кант
     self.layer.borderWidth = 1.4f;
