@@ -33,6 +33,14 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
 }
 @end
 
+// Предварительное объявление классов для Clang
+@interface CSCoverSheetViewController : UIViewController
+- (void)berserk_handlePan:(UIPanGestureRecognizer *)pan;
+@end
+
+@interface SBFLockScreenDateView : UIView
+@end
+
 #pragma mark - Hook CSCoverSheetViewController (Экран блокировки iOS 15)
 
 %hook CSCoverSheetViewController
