@@ -1,0 +1,9 @@
+Package: com.user.berserklock
+Name: BerserkLock
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Berserk themed LockScreen with custom Brand of Sacrifice clock and interactive red swipe lightning for iOS 15 Dopamine (Rootless).
+Maintainer: Antigravity
+Author: Antigravity
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000)
