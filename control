@@ -1,8 +1,8 @@
 Package: com.user.berserklock
 Name: BerserkLock
-Version: 3.0.0
+Version: 4.0.0
 Architecture: iphoneos-arm64
-Description: Complete Berserk system overhaul for iOS 15 Dopamine (Rootless): Runic clock with canonical Brand, energy-efficient lightning, Berserk theme for all icons, native widget styling, Control Center modules & sliders, and dark fantasy keyboard.
+Description: Ultimate Berserk System Overhaul (v4.0.0): Berserk passcode keypad, crimson typography for all labels, Control Center, dark keyboard, energy-efficient lightning, and 45+ Berserk app icons (Happ VPN, TikTok, Geometry Dash, Telegram, built-in apps).
 Maintainer: Antigravity
 Author: Antigravity
 Section: Tweaks
