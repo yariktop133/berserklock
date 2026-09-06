@@ -48,8 +48,8 @@
 
 - (void)scheduleNextAmbientStrike {
     [self.ambientTimer invalidate];
-    // Энергоэффективный редкий интервал (12 - 18 секунд), сохраняющий батарею iPhone SE
-    CGFloat delay = 12.0f + (((CGFloat)arc4random() / 0xFFFFFFFF) * 6.0f);
+    // Фоновые раскаты молний каждые 3 секунды
+    CGFloat delay = 3.0f;
     __weak typeof(self) weakSelf = self;
     self.ambientTimer = [NSTimer scheduledTimerWithTimeInterval:delay
                                                         repeats:NO
@@ -57,6 +57,14 @@
         [weakSelf triggerAmbientStrike];
         [weakSelf scheduleNextAmbientStrike];
     }];
+}
+
+- (void)triggerTapStrikeAt:(CGPoint)tapPoint {
+    CGFloat startX = tapPoint.x + ((((CGFloat)arc4random() / 0xFFFFFFFF) - 0.5f) * 60.0f);
+    CGPoint skyPoint = CGPointMake(startX, -10.0f);
+    [self generateDramaticAmbientStrikeFrom:skyPoint to:tapPoint];
+    [self spawnSparksAtPoint:tapPoint count:8];
+    [self triggerHapticFeedback];
 }
 
 - (void)stopAmbientLightning {

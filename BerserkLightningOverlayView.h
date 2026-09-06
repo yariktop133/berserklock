@@ -14,6 +14,9 @@
 /// Обработка свайпа/тача в точке (вызывается из распознавателя жестов)
 - (void)handleTouchAtPoint:(CGPoint)point isStart:(BOOL)isStart isEnd:(BOOL)isEnd;
 
+/// Удар молнии из неба в точку тапа
+- (void)triggerTapStrikeAt:(CGPoint)tapPoint;
+
 /// Очистка всех активных разрядов
 - (void)clearLightnings;
 

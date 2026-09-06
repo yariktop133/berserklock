@@ -7,9 +7,11 @@
 static const void *kBerserkClockKey = &kBerserkClockKey;
 static const void *kBerserkLightningKey = &kBerserkLightningKey;
 static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
+static const void *kBerserkTapGestureKey = &kBerserkTapGestureKey;
 
 static const void *kBerserkHomeLightningKey = &kBerserkHomeLightningKey;
 static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
+static const void *kBerserkHomeTapKey = &kBerserkHomeTapKey;
 
 // Делегат для одновременного распознавания жестов
 @interface BerserkGestureDelegate : NSObject <UIGestureRecognizerDelegate>
@@ -38,10 +40,12 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 // Предварительное объявление системных классов для Clang
 @interface CSCoverSheetViewController : UIViewController
 - (void)berserk_handlePan:(UIPanGestureRecognizer *)pan;
+- (void)berserk_handleTap:(UITapGestureRecognizer *)tap;
 @end
 
 @interface SBHomeScreenViewController : UIViewController
 - (void)berserk_handleHomePan:(UIPanGestureRecognizer *)pan;
+- (void)berserk_handleHomeTap:(UITapGestureRecognizer *)tap;
 @end
 
 @interface SBFLockScreenDateView : UIView
@@ -105,6 +109,9 @@ struct SBIconImageInfo {
 @interface UIKeyboardDockView : UIView
 @end
 
+@interface UIKeyboardLayoutStar : UIView
+@end
+
 @interface UIKBKeyView : UIView
 @end
 
@@ -112,6 +119,9 @@ struct SBIconImageInfo {
 @end
 
 @interface TPNumberPadButton : UIControl
++ (id)imageForCharacter:(unsigned)character;
++ (id)imageForCharacter:(unsigned)character highlighted:(BOOL)highlighted;
++ (id)imageForCharacter:(unsigned)character highlighted:(BOOL)highlighted whiteVersion:(BOOL)whiteVersion;
 @end
 
 @interface SBUIPasscodeLockViewBase : UIView
@@ -196,6 +206,75 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     }
 
     return nil;
+}
+
+static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highlighted) {
+    unichar c = (unichar)character;
+    int digit = -1;
+    if (c >= '0' && c <= '9') {
+        digit = c - '0';
+    } else if (c <= 9) {
+        digit = (int)c;
+    }
+
+    if (digit < 0 || digit > 9) return nil;
+
+    static NSMutableDictionary *digitCache = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        digitCache = [[NSMutableDictionary alloc] init];
+    });
+
+    NSString *cacheKey = [NSString stringWithFormat:@"%d_%d", digit, highlighted ? 1 : 0];
+    @synchronized(digitCache) {
+        UIImage *cached = digitCache[cacheKey];
+        if (cached) return cached;
+    }
+
+    CGSize size = CGSizeMake(68.0f, 68.0f);
+    UIGraphicsBeginImageContextWithOptions(size, NO, [UIScreen mainScreen].scale);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+
+    UIColor *textColor = highlighted ? [UIColor colorWithRed:1.0 green:0.45 blue:0.45 alpha:1.0] : [UIColor colorWithRed:0.98 green:0.12 blue:0.16 alpha:1.0];
+    UIColor *glowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.95];
+
+    NSString *digitStr = [NSString stringWithFormat:@"%d", digit];
+    UIFont *font = [UIFont fontWithName:@"Copperplate-Bold" size:34.0f] ?: [UIFont boldSystemFontOfSize:34.0f];
+
+    CGContextSetShadowWithColor(ctx, CGSizeZero, 8.0f, glowColor.CGColor);
+
+    NSDictionary *attrs = @{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: textColor
+    };
+    CGSize strSize = [digitStr sizeWithAttributes:attrs];
+    CGFloat yOffset = (digit == 0) ? (size.height - strSize.height) * 0.5f : (size.height - strSize.height) * 0.32f;
+    CGRect textRect = CGRectMake((size.width - strSize.width) * 0.5f, yOffset, strSize.width, strSize.height);
+    [digitStr drawInRect:textRect withAttributes:attrs];
+
+    // Буквы под цифрами (ABC, DEF...)
+    NSArray *lettersArray = @[@"", @"", @"ABC", @"DEF", @"GHI", @"JKL", @"MNO", @"PQRS", @"TUV", @"WXYZ"];
+    if (digit >= 2 && digit <= 9) {
+        NSString *letters = lettersArray[digit];
+        UIFont *subFont = [UIFont fontWithName:@"Copperplate" size:8.5f] ?: [UIFont systemFontOfSize:8.5f];
+        NSDictionary *subAttrs = @{
+            NSFontAttributeName: subFont,
+            NSForegroundColorAttributeName: [UIColor colorWithRed:0.75 green:0.25 blue:0.25 alpha:0.75]
+        };
+        CGSize subSize = [letters sizeWithAttributes:subAttrs];
+        CGRect subRect = CGRectMake((size.width - subSize.width) * 0.5f, yOffset + strSize.height - 2.0f, subSize.width, subSize.height);
+        [letters drawInRect:subRect withAttributes:subAttrs];
+    }
+
+    UIImage *rendered = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+
+    if (rendered) {
+        @synchronized(digitCache) {
+            digitCache[cacheKey] = rendered;
+        }
+    }
+    return rendered;
 }
 
 #pragma mark - Hook SBIcon & SBIconImageView (Двойная гарантия подмены иконок + 60 FPS)
@@ -305,7 +384,34 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     if (customImage) {
         self.layer.contents = (id)customImage.CGImage;
     }
-    // Чистое скругление без динамических теней для 60 FPS на A9
+
+    // 3D объемная фаска (Bevel & Specular Highlight)
+    CAGradientLayer *bevel = nil;
+    for (CALayer *sub in self.layer.sublayers) {
+        if ([sub.name isEqualToString:@"BerserkIconBevel"]) {
+            bevel = (CAGradientLayer *)sub;
+            break;
+        }
+    }
+    if (!bevel) {
+        bevel = [CAGradientLayer layer];
+        bevel.name = @"BerserkIconBevel";
+        bevel.colors = @[
+            (id)[UIColor colorWithWhite:1.0 alpha:0.25].CGColor,
+            (id)[UIColor clearColor].CGColor,
+            (id)[UIColor colorWithRed:0.55 green:0.0 blue:0.0 alpha:0.30].CGColor,
+            (id)[UIColor colorWithWhite:0.0 alpha:0.45].CGColor
+        ];
+        bevel.locations = @[@0.0, @0.35, @0.80, @1.0];
+        bevel.cornerRadius = 14.0f;
+        bevel.masksToBounds = YES;
+        [self.layer addSublayer:bevel];
+    }
+    bevel.frame = self.bounds;
+
+    // Кованый кровавый кант
+    self.layer.borderWidth = 1.4f;
+    self.layer.borderColor = [UIColor colorWithRed:0.88 green:0.10 blue:0.15 alpha:0.85].CGColor;
     self.layer.masksToBounds = YES;
     self.layer.cornerRadius = 14.0f;
 }
@@ -370,6 +476,13 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     [parentView addGestureRecognizer:pan];
     objc_setAssociatedObject(self, kBerserkPanGestureKey, pan, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(berserk_handleTap:)];
+    tap.cancelsTouchesInView = NO;
+    tap.delaysTouchesBegan = NO;
+    tap.delegate = [BerserkGestureDelegate sharedInstance];
+    [parentView addGestureRecognizer:tap];
+    objc_setAssociatedObject(self, kBerserkTapGestureKey, tap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
     CGFloat screenW = parentView.bounds.size.width > 0 ? parentView.bounds.size.width : 320.0f;
     CGRect clockFrame = CGRectMake(0, 36.0f, screenW, 230.0f);
     BerserkClockView *clockView = [[BerserkClockView alloc] initWithFrame:clockFrame];
@@ -382,11 +495,13 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     %orig;
     BerserkClockView *clockView = (BerserkClockView *)objc_getAssociatedObject(self, kBerserkClockKey);
     if (clockView) {
+        [self.view bringSubviewToFront:clockView];
         [clockView startClock];
     }
 
     BerserkLightningOverlayView *overlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkLightningKey);
     if (overlay) {
+        [self.view bringSubviewToFront:overlay];
         [overlay startAmbientLightning];
     }
 }
@@ -411,11 +526,24 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     if (clockView) {
         clockView.frame = CGRectMake(0, 36.0f, self.view.bounds.size.width, 230.0f);
         [clockView updateLayoutForBounds:clockView.bounds];
+        [self.view bringSubviewToFront:clockView];
     }
 
     BerserkLightningOverlayView *overlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkLightningKey);
     if (overlay) {
         overlay.frame = self.view.bounds;
+        [self.view bringSubviewToFront:overlay];
+    }
+}
+
+%new
+- (void)berserk_handleTap:(UITapGestureRecognizer *)tap {
+    if (tap.state == UIGestureRecognizerStateEnded) {
+        BerserkLightningOverlayView *overlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkLightningKey);
+        if (overlay) {
+            CGPoint point = [tap locationInView:self.view];
+            [overlay triggerTapStrikeAt:point];
+        }
     }
 }
 
@@ -466,12 +594,20 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     homePan.delegate = [BerserkGestureDelegate sharedInstance];
     [homeView addGestureRecognizer:homePan];
     objc_setAssociatedObject(self, kBerserkHomePanKey, homePan, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    UITapGestureRecognizer *homeTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(berserk_handleHomeTap:)];
+    homeTap.cancelsTouchesInView = NO;
+    homeTap.delaysTouchesBegan = NO;
+    homeTap.delegate = [BerserkGestureDelegate sharedInstance];
+    [homeView addGestureRecognizer:homeTap];
+    objc_setAssociatedObject(self, kBerserkHomeTapKey, homeTap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     %orig;
     BerserkLightningOverlayView *homeOverlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkHomeLightningKey);
     if (homeOverlay) {
+        [self.view bringSubviewToFront:homeOverlay];
         [homeOverlay startAmbientLightning];
     }
 }
@@ -490,6 +626,18 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     BerserkLightningOverlayView *homeOverlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkHomeLightningKey);
     if (homeOverlay) {
         homeOverlay.frame = self.view.bounds;
+        [self.view bringSubviewToFront:homeOverlay];
+    }
+}
+
+%new
+- (void)berserk_handleHomeTap:(UITapGestureRecognizer *)tap {
+    if (tap.state == UIGestureRecognizerStateEnded) {
+        BerserkLightningOverlayView *homeOverlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkHomeLightningKey);
+        if (homeOverlay) {
+            CGPoint point = [tap locationInView:self.view];
+            [homeOverlay triggerTapStrikeAt:point];
+        }
     }
 }
 
@@ -537,8 +685,32 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
 %hook TPNumberPadButton
 
++ (id)imageForCharacter:(unsigned)character {
+    UIImage *customImg = berserk_renderPasscodeDigitImage(character, NO);
+    if (customImg) return customImg;
+    return %orig;
+}
+
++ (id)imageForCharacter:(unsigned)character highlighted:(BOOL)highlighted {
+    UIImage *customImg = berserk_renderPasscodeDigitImage(character, highlighted);
+    if (customImg) return customImg;
+    return %orig;
+}
+
++ (id)imageForCharacter:(unsigned)character highlighted:(BOOL)highlighted whiteVersion:(BOOL)whiteVersion {
+    UIImage *customImg = berserk_renderPasscodeDigitImage(character, highlighted);
+    if (customImg) return customImg;
+    return %orig;
+}
+
 - (void)layoutSubviews {
     %orig;
+    self.layer.borderWidth = 1.6f;
+    self.layer.borderColor = [UIColor colorWithRed:0.95 green:0.08 blue:0.12 alpha:0.85].CGColor;
+    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.9].CGColor;
+    self.layer.shadowRadius = 8.0f;
+    self.layer.shadowOpacity = 0.7f;
+    self.layer.shadowOffset = CGSizeZero;
 
     UILabel *numberLabel = nil;
     @try {
@@ -717,6 +889,14 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
     %orig(NO);
 }
 
++ (id)defaultConfig {
+    id config = %orig;
+    if ([config respondsToSelector:@selector(setLightKeyboard:)]) {
+        [config performSelector:@selector(setLightKeyboard:) withObject:@NO];
+    }
+    return config;
+}
+
 %end
 
 %hook UIKeyboardDockView
@@ -728,13 +908,27 @@ static UIImage *berserk_iconForBundleID(NSString *bundleID) {
 
 %end
 
+%hook UIKeyboardLayoutStar
+
+- (void)layoutSubviews {
+    %orig;
+    self.backgroundColor = [UIColor colorWithRed:0.09 green:0.07 blue:0.09 alpha:0.98];
+}
+
+%end
+
 %hook UIKBKeyView
 
 - (void)layoutSubviews {
     %orig;
     self.layer.cornerRadius = 6.0f;
-    self.layer.borderWidth = 0.8f;
-    self.layer.borderColor = [UIColor colorWithRed:0.75 green:0.10 blue:0.15 alpha:0.45].CGColor;
+    self.layer.borderWidth = 1.4f;
+    self.layer.borderColor = [UIColor colorWithRed:0.98 green:0.12 blue:0.18 alpha:0.95].CGColor;
+    self.layer.backgroundColor = [UIColor colorWithRed:0.18 green:0.08 blue:0.10 alpha:0.92].CGColor;
+    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.8].CGColor;
+    self.layer.shadowRadius = 4.0f;
+    self.layer.shadowOpacity = 0.5f;
+    self.layer.shadowOffset = CGSizeZero;
 }
 
 %end
