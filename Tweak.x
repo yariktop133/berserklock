@@ -95,7 +95,7 @@ struct SBIconImageInfo {
 @interface CCUIContinuousSliderView : UIControl
 @end
 
-@interface CCUIContentModuleContainerView : UIView
+@interface CCUILabeledRoundButton : UIView
 @end
 
 @interface UITextInputTraits : NSObject
@@ -231,35 +231,36 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
         if (cached) return cached;
     }
 
-    CGSize size = CGSizeMake(68.0f, 68.0f);
+    CGSize size = CGSizeMake(75.0f, 75.0f);
     UIGraphicsBeginImageContextWithOptions(size, NO, [UIScreen mainScreen].scale);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
 
-    UIColor *textColor = highlighted ? [UIColor colorWithRed:1.0 green:0.45 blue:0.45 alpha:1.0] : [UIColor colorWithRed:0.98 green:0.12 blue:0.16 alpha:1.0];
-    UIColor *glowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.95];
+    UIColor *textColor = highlighted ? [UIColor colorWithRed:1.0 green:0.55 blue:0.55 alpha:1.0] : [UIColor colorWithRed:0.98 green:0.18 blue:0.22 alpha:1.0];
+    UIColor *glowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.85];
 
     NSString *digitStr = [NSString stringWithFormat:@"%d", digit];
-    UIFont *font = [UIFont fontWithName:@"Copperplate-Bold" size:34.0f] ?: [UIFont boldSystemFontOfSize:34.0f];
+    // Чистая округлая системная типографика пароля iOS в неоновом кроваво-красном стиле
+    UIFont *font = [UIFont systemFontOfSize:38.0f weight:UIFontWeightMedium];
 
-    CGContextSetShadowWithColor(ctx, CGSizeZero, 8.0f, glowColor.CGColor);
+    CGContextSetShadowWithColor(ctx, CGSizeZero, 6.0f, glowColor.CGColor);
 
     NSDictionary *attrs = @{
         NSFontAttributeName: font,
         NSForegroundColorAttributeName: textColor
     };
     CGSize strSize = [digitStr sizeWithAttributes:attrs];
-    CGFloat yOffset = (digit == 0) ? (size.height - strSize.height) * 0.5f : (size.height - strSize.height) * 0.32f;
+    CGFloat yOffset = (digit == 0) ? (size.height - strSize.height) * 0.5f : (size.height - strSize.height) * 0.30f;
     CGRect textRect = CGRectMake((size.width - strSize.width) * 0.5f, yOffset, strSize.width, strSize.height);
     [digitStr drawInRect:textRect withAttributes:attrs];
 
-    // Буквы под цифрами (ABC, DEF...)
-    NSArray *lettersArray = @[@"", @"", @"ABC", @"DEF", @"GHI", @"JKL", @"MNO", @"PQRS", @"TUV", @"WXYZ"];
+    // Буквы под цифрами (A B C, D E F...)
+    NSArray *lettersArray = @[@"", @"", @"A B C", @"D E F", @"G H I", @"J K L", @"M N O", @"P Q R S", @"T U V", @"W X Y Z"];
     if (digit >= 2 && digit <= 9) {
         NSString *letters = lettersArray[digit];
-        UIFont *subFont = [UIFont fontWithName:@"Copperplate" size:8.5f] ?: [UIFont systemFontOfSize:8.5f];
+        UIFont *subFont = [UIFont systemFontOfSize:9.5f weight:UIFontWeightMedium];
         NSDictionary *subAttrs = @{
             NSFontAttributeName: subFont,
-            NSForegroundColorAttributeName: [UIColor colorWithRed:0.75 green:0.25 blue:0.25 alpha:0.75]
+            NSForegroundColorAttributeName: [UIColor colorWithRed:0.85 green:0.32 blue:0.35 alpha:0.85]
         };
         CGSize subSize = [letters sizeWithAttributes:subAttrs];
         CGRect subRect = CGRectMake((size.width - subSize.width) * 0.5f, yOffset + strSize.height - 2.0f, subSize.width, subSize.height);
@@ -385,7 +386,32 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
         self.layer.contents = (id)customImage.CGImage;
     }
 
-    // 3D объемная фаска (Bevel & Specular Highlight)
+    // Для любых сторонних приложений без кастомной иконки применяем тонирование в стиле темной обсидиановой стали
+    CALayer *unthemedOverlay = nil;
+    for (CALayer *sub in self.layer.sublayers) {
+        if ([sub.name isEqualToString:@"BerserkUnthemedOverlay"]) {
+            unthemedOverlay = sub;
+            break;
+        }
+    }
+    if (!customImage) {
+        if (!unthemedOverlay) {
+            unthemedOverlay = [CALayer layer];
+            unthemedOverlay.name = @"BerserkUnthemedOverlay";
+            unthemedOverlay.backgroundColor = [UIColor colorWithRed:0.14 green:0.04 blue:0.06 alpha:0.60].CGColor;
+            unthemedOverlay.cornerRadius = 14.0f;
+            unthemedOverlay.masksToBounds = YES;
+            [self.layer addSublayer:unthemedOverlay];
+        }
+        unthemedOverlay.frame = self.bounds;
+        unthemedOverlay.hidden = NO;
+    } else {
+        if (unthemedOverlay) {
+            unthemedOverlay.hidden = YES;
+        }
+    }
+
+    // 3D объемный выпуклый купол (Convex Dome Specular Highlight & Deep Ambient Shadow)
     CAGradientLayer *bevel = nil;
     for (CALayer *sub in self.layer.sublayers) {
         if ([sub.name isEqualToString:@"BerserkIconBevel"]) {
@@ -397,17 +423,19 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
         bevel = [CAGradientLayer layer];
         bevel.name = @"BerserkIconBevel";
         bevel.colors = @[
-            (id)[UIColor colorWithWhite:1.0 alpha:0.25].CGColor,
+            (id)[UIColor colorWithWhite:1.0 alpha:0.38].CGColor,
+            (id)[UIColor colorWithWhite:1.0 alpha:0.12].CGColor,
             (id)[UIColor clearColor].CGColor,
-            (id)[UIColor colorWithRed:0.55 green:0.0 blue:0.0 alpha:0.30].CGColor,
-            (id)[UIColor colorWithWhite:0.0 alpha:0.45].CGColor
+            (id)[UIColor colorWithRed:0.60 green:0.0 blue:0.0 alpha:0.30].CGColor,
+            (id)[UIColor colorWithWhite:0.0 alpha:0.55].CGColor
         ];
-        bevel.locations = @[@0.0, @0.35, @0.80, @1.0];
+        bevel.locations = @[@0.0, @0.18, @0.48, @0.80, @1.0];
         bevel.cornerRadius = 14.0f;
         bevel.masksToBounds = YES;
         [self.layer addSublayer:bevel];
     }
     bevel.frame = self.bounds;
+    [self.layer bringSublayerToFront:bevel];
 
     // Кованый кровавый кант
     self.layer.borderWidth = 1.4f;
@@ -673,11 +701,11 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
 
 - (void)layoutSubviews {
     %orig;
-    self.layer.borderWidth = 1.4f;
-    self.layer.borderColor = [UIColor colorWithRed:0.90 green:0.08 blue:0.12 alpha:0.80].CGColor;
-    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.9].CGColor;
-    self.layer.shadowRadius = 8.0f;
-    self.layer.shadowOpacity = 0.7f;
+    self.layer.borderWidth = 1.0f;
+    self.layer.borderColor = [UIColor colorWithRed:0.92 green:0.10 blue:0.15 alpha:0.75].CGColor;
+    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.85].CGColor;
+    self.layer.shadowRadius = 6.0f;
+    self.layer.shadowOpacity = 0.60f;
     self.layer.shadowOffset = CGSizeZero;
 }
 
@@ -705,12 +733,10 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
 
 - (void)layoutSubviews {
     %orig;
-    self.layer.borderWidth = 1.6f;
-    self.layer.borderColor = [UIColor colorWithRed:0.95 green:0.08 blue:0.12 alpha:0.85].CGColor;
-    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.9].CGColor;
-    self.layer.shadowRadius = 8.0f;
-    self.layer.shadowOpacity = 0.7f;
-    self.layer.shadowOffset = CGSizeZero;
+    // Убираем искусственную прямоугольную рамку, сохраняя идеальную окружность TPRevealingRingView
+    self.layer.borderWidth = 0.0f;
+    self.layer.borderColor = [UIColor clearColor].CGColor;
+    self.layer.shadowOpacity = 0.0f;
 
     UILabel *numberLabel = nil;
     @try {
@@ -718,14 +744,11 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
     } @catch (NSException *e) {}
 
     if (numberLabel && [numberLabel isKindOfClass:[UILabel class]]) {
-        numberLabel.textColor = [UIColor colorWithRed:0.98 green:0.18 blue:0.18 alpha:1.0];
-        UIFont *bf = [UIFont fontWithName:@"Copperplate-Bold" size:numberLabel.font.pointSize];
-        if (bf) {
-            numberLabel.font = bf;
-        }
-        numberLabel.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.9].CGColor;
+        numberLabel.textColor = [UIColor colorWithRed:0.98 green:0.18 blue:0.22 alpha:1.0];
+        numberLabel.font = [UIFont systemFontOfSize:numberLabel.font.pointSize weight:UIFontWeightMedium];
+        numberLabel.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.85].CGColor;
         numberLabel.layer.shadowRadius = 6.0f;
-        numberLabel.layer.shadowOpacity = 0.85f;
+        numberLabel.layer.shadowOpacity = 0.75f;
         numberLabel.layer.shadowOffset = CGSizeZero;
     }
 
@@ -735,11 +758,8 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
     } @catch (NSException *e) {}
 
     if (letterLabel && [letterLabel isKindOfClass:[UILabel class]]) {
-        letterLabel.textColor = [UIColor colorWithRed:0.75 green:0.35 blue:0.35 alpha:0.75];
-        UIFont *lf = [UIFont fontWithName:@"Copperplate" size:letterLabel.font.pointSize];
-        if (lf) {
-            letterLabel.font = lf;
-        }
+        letterLabel.textColor = [UIColor colorWithRed:0.85 green:0.32 blue:0.35 alpha:0.85];
+        letterLabel.font = [UIFont systemFontOfSize:letterLabel.font.pointSize weight:UIFontWeightMedium];
     }
 }
 
@@ -757,13 +777,10 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
 
     if (statusTitle && [statusTitle isKindOfClass:[UILabel class]]) {
         statusTitle.textColor = [UIColor colorWithRed:0.95 green:0.20 blue:0.20 alpha:1.0];
-        UIFont *bf = [UIFont fontWithName:@"Copperplate-Bold" size:statusTitle.font.pointSize];
-        if (bf) {
-            statusTitle.font = bf;
-        }
+        statusTitle.font = [UIFont systemFontOfSize:statusTitle.font.pointSize weight:UIFontWeightMedium];
         statusTitle.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.9].CGColor;
-        statusTitle.layer.shadowRadius = 8.0f;
-        statusTitle.layer.shadowOpacity = 0.85f;
+        statusTitle.layer.shadowRadius = 6.0f;
+        statusTitle.layer.shadowOpacity = 0.8f;
         statusTitle.layer.shadowOffset = CGSizeZero;
     }
 }
@@ -786,34 +803,47 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
     %orig;
     if (self.text.length > 0) {
         self.textColor = [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0];
-        UIFont *bf = [UIFont fontWithName:@"Copperplate-Bold" size:self.font.pointSize];
-        if (bf) {
-            self.font = bf;
+    }
+}
+
+%end
+
+#pragma mark - Hook Пункт управления (Control Center: чистая нативная геометрия без рамок-квадратов)
+
+%hook CCUIRoundButton
+
+- (void)layoutSubviews {
+    %orig;
+    self.layer.borderWidth = 0.0f;
+
+    if (self.selected) {
+        self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:1.0].CGColor;
+        self.layer.shadowRadius = 8.0f;
+        self.layer.shadowOpacity = 0.85f;
+        self.layer.shadowOffset = CGSizeZero;
+        [self setBackgroundColor:[UIColor colorWithRed:0.92 green:0.08 blue:0.12 alpha:1.0]];
+    } else {
+        self.layer.shadowOpacity = 0.0f;
+        [self setBackgroundColor:[UIColor colorWithRed:0.12 green:0.08 blue:0.10 alpha:0.85]];
+    }
+
+    for (UIView *sub in self.subviews) {
+        if ([sub isKindOfClass:[UIImageView class]]) {
+            sub.tintColor = self.selected ? [UIColor whiteColor] : [UIColor colorWithRed:0.95 green:0.25 blue:0.28 alpha:1.0];
         }
     }
 }
 
 %end
 
-#pragma mark - Hook Пункт управления (Control Center)
-
-%hook CCUIRoundButton
+%hook CCUILabeledRoundButton
 
 - (void)layoutSubviews {
     %orig;
-    self.layer.borderWidth = 1.2f;
-
-    if (self.selected) {
-        self.layer.borderColor = [UIColor colorWithRed:1.0 green:0.20 blue:0.20 alpha:1.0].CGColor;
-        self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:1.0].CGColor;
-        self.layer.shadowRadius = 10.0f;
-        self.layer.shadowOpacity = 0.9f;
-        self.layer.shadowOffset = CGSizeZero;
-        [self setBackgroundColor:[UIColor colorWithRed:0.92 green:0.08 blue:0.12 alpha:1.0]];
-    } else {
-        self.layer.borderColor = [UIColor colorWithRed:0.65 green:0.08 blue:0.12 alpha:0.5].CGColor;
-        self.layer.shadowOpacity = 0.0f;
-        [self setBackgroundColor:[UIColor colorWithRed:0.10 green:0.08 blue:0.10 alpha:0.85]];
+    for (UIView *sub in self.subviews) {
+        if ([sub isKindOfClass:[UILabel class]]) {
+            ((UILabel *)sub).textColor = [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0];
+        }
     }
 }
 
@@ -823,12 +853,8 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
 
 - (void)layoutSubviews {
     %orig;
-    self.layer.cornerRadius = 16.0f;
-    self.layer.borderWidth = 1.4f;
-    self.layer.borderColor = [UIColor colorWithRed:0.85 green:0.10 blue:0.15 alpha:0.75].CGColor;
-    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.8].CGColor;
-    self.layer.shadowRadius = 8.0f;
-    self.layer.shadowOpacity = 0.5f;
+    self.layer.borderWidth = 0.0f;
+    self.layer.shadowOpacity = 0.0f;
 
     UIView *valueIndicator = nil;
     @try {
@@ -838,17 +864,6 @@ static UIImage *berserk_renderPasscodeDigitImage(unsigned character, BOOL highli
     if (valueIndicator) {
         valueIndicator.backgroundColor = [UIColor colorWithRed:0.95 green:0.12 blue:0.16 alpha:0.95];
     }
-}
-
-%end
-
-%hook CCUIContentModuleContainerView
-
-- (void)layoutSubviews {
-    %orig;
-    self.layer.cornerRadius = 18.0f;
-    self.layer.borderWidth = 1.4f;
-    self.layer.borderColor = [UIColor colorWithRed:0.8 green:0.08 blue:0.12 alpha:0.5].CGColor;
 }
 
 %end

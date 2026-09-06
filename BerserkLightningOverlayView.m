@@ -127,8 +127,8 @@
     core.lineJoin = kCALineJoinRound;
     [self.layer addSublayer:core];
 
-    [self fadeAndRemoveLayer:halo duration:0.32f];
-    [self fadeAndRemoveLayer:core duration:0.26f];
+    [self fadeAndRemoveLayer:halo duration:0.42f];
+    [self fadeAndRemoveLayer:core duration:0.36f];
 
     [self spawnSparksAtPoint:end count:5];
 
@@ -235,8 +235,8 @@
     coreLayer.lineJoin = kCALineJoinRound;
     [self.layer addSublayer:coreLayer];
 
-    [self fadeAndRemoveLayer:haloLayer duration:0.26f];
-    [self fadeAndRemoveLayer:coreLayer duration:0.22f];
+    [self fadeAndRemoveLayer:haloLayer duration:0.38f];
+    [self fadeAndRemoveLayer:coreLayer duration:0.32f];
 
     [self spawnSparksAtPoint:end count:4];
     [self triggerHapticFeedback];
@@ -249,7 +249,8 @@
                          maxDepth:(int)maxDepth
                      displacement:(CGFloat)disp {
     if (depth >= maxDepth) {
-        [path addLineToPoint:end];
+        CGPoint midControl = CGPointMake((start.x + end.x) * 0.5f, (start.y + end.y) * 0.5f);
+        [path addQuadCurveToPoint:end controlPoint:midControl];
         return;
     }
 
@@ -364,7 +365,7 @@
     fade.fromValue = @(1.0f);
     fade.toValue = @(0.0f);
     fade.duration = duration;
-    fade.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+    fade.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
 
     [CATransaction begin];
     [CATransaction setCompletionBlock:^{
