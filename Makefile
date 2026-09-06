@@ -7,7 +7,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME := BerserkLock
 
-BerserkLock_FILES := Tweak.x BerserkClockView.m BerserkLightningOverlayView.m BerserkRunicRenderer.m BerserkHomeWidgetView.m
+BerserkLock_FILES := Tweak.x BerserkClockView.m BerserkLightningOverlayView.m BerserkRunicRenderer.m
 BerserkLock_CFLAGS := -fobjc-arc -O3 -Wall
 BerserkLock_FRAMEWORKS := UIKit CoreGraphics QuartzCore AudioToolbox
 

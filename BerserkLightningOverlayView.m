@@ -48,8 +48,8 @@
 
 - (void)scheduleNextAmbientStrike {
     [self.ambientTimer invalidate];
-    // Интервал ~3.0 секунды с органическим джиттером (2.5 - 3.5с)
-    CGFloat delay = 2.5f + (((CGFloat)arc4random() / 0xFFFFFFFF) * 1.0f);
+    // Энергоэффективный редкий интервал (12 - 18 секунд), сохраняющий батарею iPhone SE
+    CGFloat delay = 12.0f + (((CGFloat)arc4random() / 0xFFFFFFFF) * 6.0f);
     __weak typeof(self) weakSelf = self;
     self.ambientTimer = [NSTimer scheduledTimerWithTimeInterval:delay
                                                         repeats:NO
@@ -62,6 +62,7 @@
 - (void)stopAmbientLightning {
     [self.ambientTimer invalidate];
     self.ambientTimer = nil;
+    [self clearLightnings];
 }
 
 - (void)triggerAmbientStrike {

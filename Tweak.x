@@ -2,7 +2,6 @@
 #import <objc/runtime.h>
 #import "BerserkClockView.h"
 #import "BerserkLightningOverlayView.h"
-#import "BerserkHomeWidgetView.h"
 
 // Ключи для ассоциированных объектов
 static const void *kBerserkClockKey = &kBerserkClockKey;
@@ -10,7 +9,6 @@ static const void *kBerserkLightningKey = &kBerserkLightningKey;
 static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
 
 static const void *kBerserkHomeLightningKey = &kBerserkHomeLightningKey;
-static const void *kBerserkHomeWidgetKey = &kBerserkHomeWidgetKey;
 static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 
 // Делегат для одновременного распознавания жестов
@@ -37,7 +35,7 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 }
 @end
 
-// Предварительное объявление классов SpringBoard для Clang
+// Предварительное объявление классов для Clang
 @interface CSCoverSheetViewController : UIViewController
 - (void)berserk_handlePan:(UIPanGestureRecognizer *)pan;
 @end
@@ -47,6 +45,36 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
 @end
 
 @interface SBFLockScreenDateView : UIView
+@end
+
+@interface SBIconImageView : UIView
+@end
+
+@interface SBIconView : UIView
+- (BOOL)isWidgetIcon;
+@end
+
+@interface WGWidgetPlatterView : UIView
+@end
+
+@interface CCUIRoundButton : UIControl
+@property (nonatomic, assign, getter=isSelected) BOOL selected;
+@end
+
+@interface CCUIContinuousSliderView : UIControl
+@end
+
+@interface CCUIContentModuleContainerView : UIView
+@end
+
+@interface UIKBRenderConfig : NSObject
+- (BOOL)lightKeyboard;
+@end
+
+@interface UIKeyboardDockView : UIView
+@end
+
+@interface UIKBKeyView : UIView
 @end
 
 #pragma mark - Hook CSCoverSheetViewController (Экран блокировки)
@@ -172,15 +200,6 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
     homePan.delegate = [BerserkGestureDelegate sharedInstance];
     [homeView addGestureRecognizer:homePan];
     objc_setAssociatedObject(self, kBerserkHomePanKey, homePan, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-    // 3. Виджет рабочего стола (Шкала Ярости / Батарея + мини-Клеймо)
-    CGFloat widgetW = homeView.bounds.size.width - 24.0f;
-    if (widgetW <= 0) widgetW = 296.0f;
-    CGRect widgetFrame = CGRectMake(12.0f, 28.0f, widgetW, 46.0f);
-    BerserkHomeWidgetView *widget = [[BerserkHomeWidgetView alloc] initWithFrame:widgetFrame];
-    widget.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
-    [homeView addSubview:widget];
-    objc_setAssociatedObject(self, kBerserkHomeWidgetKey, widget, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -188,11 +207,6 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
     BerserkLightningOverlayView *homeOverlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkHomeLightningKey);
     if (homeOverlay) {
         [homeOverlay startAmbientLightning];
-    }
-
-    BerserkHomeWidgetView *widget = (BerserkHomeWidgetView *)objc_getAssociatedObject(self, kBerserkHomeWidgetKey);
-    if (widget) {
-        [widget startWidget];
     }
 }
 
@@ -203,11 +217,6 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
         [homeOverlay stopAmbientLightning];
         [homeOverlay clearLightnings];
     }
-
-    BerserkHomeWidgetView *widget = (BerserkHomeWidgetView *)objc_getAssociatedObject(self, kBerserkHomeWidgetKey);
-    if (widget) {
-        [widget stopWidget];
-    }
 }
 
 - (void)viewDidLayoutSubviews {
@@ -215,11 +224,6 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
     BerserkLightningOverlayView *homeOverlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkHomeLightningKey);
     if (homeOverlay) {
         homeOverlay.frame = self.view.bounds;
-    }
-
-    BerserkHomeWidgetView *widget = (BerserkHomeWidgetView *)objc_getAssociatedObject(self, kBerserkHomeWidgetKey);
-    if (widget) {
-        widget.frame = CGRectMake(12.0f, 28.0f, self.view.bounds.size.width - 24.0f, 46.0f);
     }
 }
 
@@ -245,6 +249,157 @@ static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
         default:
             break;
     }
+}
+
+%end
+
+#pragma mark - Hook SBIconImageView (Стилизация ВСЕХ иконок рабочего стола)
+
+%hook SBIconImageView
+
+- (void)layoutSubviews {
+    %orig;
+    // Каждая иконка рабочего стола получает стальную окантовку и багровое свечение
+    self.layer.masksToBounds = YES;
+    self.layer.cornerRadius = 14.0f;
+    self.layer.borderWidth = 1.4f;
+    self.layer.borderColor = [UIColor colorWithRed:0.85 green:0.08 blue:0.12 alpha:0.75].CGColor;
+    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.8].CGColor;
+    self.layer.shadowRadius = 5.0f;
+    self.layer.shadowOpacity = 0.6f;
+    self.layer.shadowOffset = CGSizeZero;
+}
+
+%end
+
+#pragma mark - Hook WGWidgetPlatterView / SBIconView (Стилизация ВСЕХ виджетов рабочего стола)
+
+%hook WGWidgetPlatterView
+
+- (void)layoutSubviews {
+    %orig;
+    // Обсидиановый фон и кровавая окантовка для всех виджетов
+    self.layer.cornerRadius = 18.0f;
+    self.layer.borderWidth = 1.6f;
+    self.layer.borderColor = [UIColor colorWithRed:0.90 green:0.10 blue:0.15 alpha:0.85].CGColor;
+    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.85].CGColor;
+    self.layer.shadowRadius = 10.0f;
+    self.layer.shadowOpacity = 0.55f;
+    self.layer.shadowOffset = CGSizeZero;
+    self.backgroundColor = [UIColor colorWithRed:0.08 green:0.06 blue:0.08 alpha:0.90];
+}
+
+%end
+
+%hook SBIconView
+
+- (void)layoutSubviews {
+    %orig;
+    if ([self respondsToSelector:@selector(isWidgetIcon)] && [self isWidgetIcon]) {
+        self.layer.cornerRadius = 18.0f;
+        self.layer.borderWidth = 1.6f;
+        self.layer.borderColor = [UIColor colorWithRed:0.90 green:0.10 blue:0.15 alpha:0.85].CGColor;
+        self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.85].CGColor;
+        self.layer.shadowRadius = 10.0f;
+        self.layer.shadowOpacity = 0.55f;
+        self.layer.shadowOffset = CGSizeZero;
+    }
+}
+
+%end
+
+#pragma mark - Hook Пункт управления (Control Center — Wi-Fi, фонарик, ползунки)
+
+%hook CCUIRoundButton
+
+- (void)layoutSubviews {
+    %orig;
+    self.layer.borderWidth = 1.2f;
+
+    if (self.selected) {
+        // Активный тумблер: пылающий кроваво-красный цвет с багровым неоном
+        self.layer.borderColor = [UIColor colorWithRed:1.0 green:0.20 blue:0.20 alpha:1.0].CGColor;
+        self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:1.0].CGColor;
+        self.layer.shadowRadius = 10.0f;
+        self.layer.shadowOpacity = 0.9f;
+        self.layer.shadowOffset = CGSizeZero;
+        [self setBackgroundColor:[UIColor colorWithRed:0.92 green:0.08 blue:0.12 alpha:1.0]];
+    } else {
+        // Выключенный тумблер: вороненая сталь с легким алым кантом
+        self.layer.borderColor = [UIColor colorWithRed:0.65 green:0.08 blue:0.12 alpha:0.5].CGColor;
+        self.layer.shadowOpacity = 0.0f;
+        [self setBackgroundColor:[UIColor colorWithRed:0.10 green:0.08 blue:0.10 alpha:0.85]];
+    }
+}
+
+%end
+
+%hook CCUIContinuousSliderView
+
+- (void)layoutSubviews {
+    %orig;
+    // Слайдеры яркости и громкости
+    self.layer.cornerRadius = 16.0f;
+    self.layer.borderWidth = 1.4f;
+    self.layer.borderColor = [UIColor colorWithRed:0.85 green:0.10 blue:0.15 alpha:0.75].CGColor;
+    self.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.0 blue:0.0 alpha:0.8].CGColor;
+    self.layer.shadowRadius = 8.0f;
+    self.layer.shadowOpacity = 0.5f;
+
+    UIView *valueIndicator = nil;
+    @try {
+        valueIndicator = [self valueForKey:@"_valueIndicator"];
+    } @catch (NSException *e) {}
+
+    if (valueIndicator) {
+        valueIndicator.backgroundColor = [UIColor colorWithRed:0.95 green:0.12 blue:0.16 alpha:0.95];
+    }
+}
+
+%end
+
+%hook CCUIContentModuleContainerView
+
+- (void)layoutSubviews {
+    %orig;
+    self.layer.cornerRadius = 18.0f;
+    self.layer.borderWidth = 1.4f;
+    self.layer.borderColor = [UIColor colorWithRed:0.8 green:0.08 blue:0.12 alpha:0.5].CGColor;
+}
+
+%end
+
+#pragma mark - Hook Системная клавиатура в стиле Berserk
+
+%hook UIKBRenderConfig
+
+- (BOOL)lightKeyboard {
+    // Принудительно глубокая темная тема для клавиатуры во всей системе
+    return NO;
+}
+
+- (void)setLightKeyboard:(BOOL)light {
+    %orig(NO);
+}
+
+%end
+
+%hook UIKeyboardDockView
+
+- (void)layoutSubviews {
+    %orig;
+    self.backgroundColor = [UIColor colorWithRed:0.08 green:0.06 blue:0.08 alpha:0.95];
+}
+
+%end
+
+%hook UIKBKeyView
+
+- (void)layoutSubviews {
+    %orig;
+    self.layer.cornerRadius = 6.0f;
+    self.layer.borderWidth = 0.8f;
+    self.layer.borderColor = [UIColor colorWithRed:0.75 green:0.10 blue:0.15 alpha:0.45].CGColor;
 }
 
 %end
