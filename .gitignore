@@ -1,5 +1,4 @@
 .theos/
 _
-packages/
-*.deb
 .DS_Store
+!packages/com.user.berserklock_1.0.0_iphoneos-arm64.deb
