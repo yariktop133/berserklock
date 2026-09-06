@@ -2,13 +2,18 @@
 #import <objc/runtime.h>
 #import "BerserkClockView.h"
 #import "BerserkLightningOverlayView.h"
+#import "BerserkHomeWidgetView.h"
 
 // Ключи для ассоциированных объектов
 static const void *kBerserkClockKey = &kBerserkClockKey;
 static const void *kBerserkLightningKey = &kBerserkLightningKey;
 static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
 
-// Делегат для одновременного распознавания жестов (чтобы свайпы не конфликтовали с iOS)
+static const void *kBerserkHomeLightningKey = &kBerserkHomeLightningKey;
+static const void *kBerserkHomeWidgetKey = &kBerserkHomeWidgetKey;
+static const void *kBerserkHomePanKey = &kBerserkHomePanKey;
+
+// Делегат для одновременного распознавания жестов
 @interface BerserkGestureDelegate : NSObject <UIGestureRecognizerDelegate>
 + (instancetype)sharedInstance;
 @end
@@ -24,7 +29,6 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
-    // Разрешаем одновременную работу с родными жестами разблокировки/шторок
     return YES;
 }
 
@@ -33,15 +37,19 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
 }
 @end
 
-// Предварительное объявление классов для Clang
+// Предварительное объявление классов SpringBoard для Clang
 @interface CSCoverSheetViewController : UIViewController
 - (void)berserk_handlePan:(UIPanGestureRecognizer *)pan;
+@end
+
+@interface SBHomeScreenViewController : UIViewController
+- (void)berserk_handleHomePan:(UIPanGestureRecognizer *)pan;
 @end
 
 @interface SBFLockScreenDateView : UIView
 @end
 
-#pragma mark - Hook CSCoverSheetViewController (Экран блокировки iOS 15)
+#pragma mark - Hook CSCoverSheetViewController (Экран блокировки)
 
 %hook CSCoverSheetViewController
 
@@ -50,13 +58,13 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
 
     UIView *parentView = self.view;
 
-    // 1. Создаем и монтируем оверлей молний
+    // 1. Оверлей молний на экране блокировки
     BerserkLightningOverlayView *overlay = [[BerserkLightningOverlayView alloc] initWithFrame:parentView.bounds];
     overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [parentView addSubview:overlay];
     objc_setAssociatedObject(self, kBerserkLightningKey, overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    // 2. Распознаватель жеста свайпа по экрану
+    // 2. Жест свайпа по экрану блокировки
     UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(berserk_handlePan:)];
     pan.cancelsTouchesInView = NO;
     pan.delaysTouchesBegan = NO;
@@ -65,10 +73,9 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
     [parentView addGestureRecognizer:pan];
     objc_setAssociatedObject(self, kBerserkPanGestureKey, pan, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    // 3. Создаем и монтируем часы в стиле Берсерка
-    // Для iPhone SE 1 экран 320x568 pt, часы размещаются в верхней трети экрана
+    // 3. Часы в стиле Берсерка (каноничное Клеймо + рунические цифры)
     CGFloat screenW = parentView.bounds.size.width > 0 ? parentView.bounds.size.width : 320.0f;
-    CGRect clockFrame = CGRectMake(0, 42.0f, screenW, 220.0f);
+    CGRect clockFrame = CGRectMake(0, 36.0f, screenW, 230.0f);
     BerserkClockView *clockView = [[BerserkClockView alloc] initWithFrame:clockFrame];
     clockView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
     [parentView addSubview:clockView];
@@ -81,11 +88,15 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
     if (clockView) {
         [clockView startClock];
     }
+
+    BerserkLightningOverlayView *overlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkLightningKey);
+    if (overlay) {
+        [overlay startAmbientLightning];
+    }
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
     %orig;
-    // Остановка анимаций и таймеров для сохранения аккумулятора
     BerserkClockView *clockView = (BerserkClockView *)objc_getAssociatedObject(self, kBerserkClockKey);
     if (clockView) {
         [clockView stopClock];
@@ -93,6 +104,7 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
 
     BerserkLightningOverlayView *overlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkLightningKey);
     if (overlay) {
+        [overlay stopAmbientLightning];
         [overlay clearLightnings];
     }
 }
@@ -101,7 +113,7 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
     %orig;
     BerserkClockView *clockView = (BerserkClockView *)objc_getAssociatedObject(self, kBerserkClockKey);
     if (clockView) {
-        clockView.frame = CGRectMake(0, 42.0f, self.view.bounds.size.width, 220.0f);
+        clockView.frame = CGRectMake(0, 36.0f, self.view.bounds.size.width, 230.0f);
         [clockView updateLayoutForBounds:clockView.bounds];
     }
 
@@ -137,7 +149,107 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
 
 %end
 
-#pragma mark - Hook SBFLockScreenDateView (Скрытие стандартных часов iOS 15)
+#pragma mark - Hook SBHomeScreenViewController (Рабочий стол SpringBoard)
+
+%hook SBHomeScreenViewController
+
+- (void)viewDidLoad {
+    %orig;
+
+    UIView *homeView = self.view;
+
+    // 1. Оверлей молний на рабочем столе
+    BerserkLightningOverlayView *homeOverlay = [[BerserkLightningOverlayView alloc] initWithFrame:homeView.bounds];
+    homeOverlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [homeView addSubview:homeOverlay];
+    objc_setAssociatedObject(self, kBerserkHomeLightningKey, homeOverlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    // 2. Свайпы по рабочему столу (между страницами иконок)
+    UIPanGestureRecognizer *homePan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(berserk_handleHomePan:)];
+    homePan.cancelsTouchesInView = NO;
+    homePan.delaysTouchesBegan = NO;
+    homePan.delaysTouchesEnded = NO;
+    homePan.delegate = [BerserkGestureDelegate sharedInstance];
+    [homeView addGestureRecognizer:homePan];
+    objc_setAssociatedObject(self, kBerserkHomePanKey, homePan, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    // 3. Виджет рабочего стола (Шкала Ярости / Батарея + мини-Клеймо)
+    CGFloat widgetW = homeView.bounds.size.width - 24.0f;
+    if (widgetW <= 0) widgetW = 296.0f;
+    CGRect widgetFrame = CGRectMake(12.0f, 28.0f, widgetW, 46.0f);
+    BerserkHomeWidgetView *widget = [[BerserkHomeWidgetView alloc] initWithFrame:widgetFrame];
+    widget.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
+    [homeView addSubview:widget];
+    objc_setAssociatedObject(self, kBerserkHomeWidgetKey, widget, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    BerserkLightningOverlayView *homeOverlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkHomeLightningKey);
+    if (homeOverlay) {
+        [homeOverlay startAmbientLightning];
+    }
+
+    BerserkHomeWidgetView *widget = (BerserkHomeWidgetView *)objc_getAssociatedObject(self, kBerserkHomeWidgetKey);
+    if (widget) {
+        [widget startWidget];
+    }
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    BerserkLightningOverlayView *homeOverlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkHomeLightningKey);
+    if (homeOverlay) {
+        [homeOverlay stopAmbientLightning];
+        [homeOverlay clearLightnings];
+    }
+
+    BerserkHomeWidgetView *widget = (BerserkHomeWidgetView *)objc_getAssociatedObject(self, kBerserkHomeWidgetKey);
+    if (widget) {
+        [widget stopWidget];
+    }
+}
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    BerserkLightningOverlayView *homeOverlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkHomeLightningKey);
+    if (homeOverlay) {
+        homeOverlay.frame = self.view.bounds;
+    }
+
+    BerserkHomeWidgetView *widget = (BerserkHomeWidgetView *)objc_getAssociatedObject(self, kBerserkHomeWidgetKey);
+    if (widget) {
+        widget.frame = CGRectMake(12.0f, 28.0f, self.view.bounds.size.width - 24.0f, 46.0f);
+    }
+}
+
+%new
+- (void)berserk_handleHomePan:(UIPanGestureRecognizer *)pan {
+    BerserkLightningOverlayView *homeOverlay = (BerserkLightningOverlayView *)objc_getAssociatedObject(self, kBerserkHomeLightningKey);
+    if (!homeOverlay) return;
+
+    CGPoint point = [pan locationInView:self.view];
+
+    switch (pan.state) {
+        case UIGestureRecognizerStateBegan:
+            [homeOverlay handleTouchAtPoint:point isStart:YES isEnd:NO];
+            break;
+        case UIGestureRecognizerStateChanged:
+            [homeOverlay handleTouchAtPoint:point isStart:NO isEnd:NO];
+            break;
+        case UIGestureRecognizerStateEnded:
+        case UIGestureRecognizerStateCancelled:
+        case UIGestureRecognizerStateFailed:
+            [homeOverlay handleTouchAtPoint:point isStart:NO isEnd:YES];
+            break;
+        default:
+            break;
+    }
+}
+
+%end
+
+#pragma mark - Hook SBFLockScreenDateView (Скрытие стоковых часов iOS 15)
 
 %hook SBFLockScreenDateView
 
@@ -154,7 +266,6 @@ static const void *kBerserkPanGestureKey = &kBerserkPanGestureKey;
 }
 
 - (void)setAlpha:(CGFloat)alpha {
-    // Предотвращаем включение видимости стоковых часов системой
     %orig(0.0f);
 }
 
