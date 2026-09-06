@@ -232,7 +232,7 @@
 - (void)stopClock {
     [self.clockTimer invalidate];
     self.clockTimer = nil;
-    [self.stopPulseAnimation];
+    [self stopPulseAnimation];
 }
 
 - (void)updateTime {
